@@ -39,3 +39,6 @@ wave.type = TYPE_INT24;
 result = wav_write_file(&wave, "sine.wav");
 free(wave.data);
 ```
+
+# License
+zlib License.
