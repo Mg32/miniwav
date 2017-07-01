@@ -1,3 +1,6 @@
+# Test Directory
+/test
+
 # Object files
 *.o
 *.ko
