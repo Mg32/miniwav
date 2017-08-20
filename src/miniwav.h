@@ -28,15 +28,15 @@ typedef enum waverror {
     ERROR_OK,
     // common
     ERROR_UNKNOWN,
-    ERROR_UNABLE_TO_OPEN,
     ERROR_MEMORY_ALLOC,
+    ERROR_UNSUPPORTED,
+    ERROR_UNABLE_TO_OPEN,
     // read
     ERROR_NOT_WAVE,
     ERROR_BROKEN,
-    ERROR_UNSUPPORTED,
     // write
     ERROR_BAD_DATA,
-    ERROR_WRITE_FALUT,
+    ERROR_WRITE_FAULT,
 } waverror_t;
 
 typedef enum wavtype {
@@ -49,13 +49,15 @@ typedef enum wavtype {
 } wavtype_t;
 
 typedef struct wavdata {
-    int samplerate;
-    size_t channels;
+    unsigned samplerate;
+    unsigned channels;
     size_t size;
     double *data;
     wavtype_t type;
 } wavdata_t;
 
+waverror_t wav_create(wavdata_t *wave, unsigned samplerate, unsigned ch, size_t frames);
+void wav_destroy(wavdata_t *wave);
 waverror_t wav_read_file(wavdata_t *wave, const char *filename);
 waverror_t wav_write_file(const wavdata_t *wave, const char *filename);
 

@@ -26,15 +26,47 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+///////////////////////////////////////////////////////////////////////////////
+// Misc.
+///////////////////////////////////////////////////////////////////////////////
+
 static const uint8_t RIFF_HEADER[4] = { 0x52, 0x49, 0x46, 0x46 };
 static const uint8_t WAVE_HEADER[4] = { 0x57, 0x41, 0x56, 0x45 };
 static const uint8_t FMT__HEADER[4] = { 0x66, 0x6D, 0x74, 0x20 };
 static const uint8_t DATA_HEADER[4] = { 0x64, 0x61, 0x74, 0x61 };
 
-///////////////////////////////////////////////////////////////////////////////
-
+static double *buffer_new(size_t length);
+static void buffer_delete(double *buffer);
+static int wavdata_is_bad_data(const wavdata_t *wave);
+static int wavdata_is_unsupported(const wavdata_t *wave);
 static wavtype_t wavtype_create(int fmtid, int bits);
 static int wavtype_get_bits(wavtype_t type);
+
+static double *buffer_new(size_t length)
+{
+    return (double *)malloc(length * sizeof(double));
+}
+
+static void buffer_delete(double *buffer)
+{
+    if (buffer != NULL) free(buffer);
+}
+
+static int wavdata_is_bad_data(const wavdata_t *wave)
+{
+    return (
+        wave->size <= 0 ||
+        wave->data == NULL ||
+        wave->type == TYPE_UNKNOWN
+    );
+}
+
+static int wavdata_is_unsupported(const wavdata_t *wave)
+{
+    return (
+        wave->type == TYPE_UNKNOWN
+    );
+}
 
 static wavtype_t wavtype_create(int fmtid, int bits)
 {
@@ -68,12 +100,38 @@ static int wavtype_get_bits(wavtype_t type)
     case TYPE_INT16: return 16;
     case TYPE_INT24: return 24;
     case TYPE_INT32: return 32;
-    case TYPE_FLOAT: return sizeof(float) * 8;
+    case TYPE_FLOAT: return 32;
     default:         return -1;
     }
     return -1;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// Create and Destroy
+///////////////////////////////////////////////////////////////////////////////
+
+waverror_t wav_create(wavdata_t *wave, unsigned samplerate, unsigned ch, size_t frames)
+{
+    wave->samplerate = samplerate;
+    wave->channels = ch;
+    wave->size = frames * ch;
+    wave->data = buffer_new(wave->size);
+    wave->type = TYPE_INT16;
+    if (wavdata_is_bad_data(wave)) return ERROR_BAD_DATA;
+    if (wavdata_is_unsupported(wave)) return ERROR_UNSUPPORTED;
+    return ERROR_OK;
+}
+
+void wav_destroy(wavdata_t *wave)
+{
+    wave->samplerate = 0;
+    wave->channels = 0;
+    wave->size = 0;
+    buffer_delete(wave->data); wave->data = NULL;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Write
 ///////////////////////////////////////////////////////////////////////////////
 
 static waverror_t write_header_riff(const wavdata_t *wave, FILE *fp);
@@ -97,9 +155,7 @@ waverror_t wav_write_file(const wavdata_t *wave, const char *filename)
     assert(wave != NULL);
     assert(filename != NULL);
 
-    if (wave->size <= 0 ||
-        wave->data == NULL ||
-        wave->type == TYPE_UNKNOWN) {
+    if (wavdata_is_bad_data(wave)) {
         err = ERROR_BAD_DATA;
         goto l_error;
     }
@@ -128,7 +184,7 @@ static waverror_t write_header_riff(const wavdata_t *wave, FILE *fp)
     assert(wave->size > 0);
     assert(wave->type != TYPE_UNKNOWN);
     assert(fp != NULL);
-    if (ferror(fp)) { return ERROR_WRITE_FALUT; }
+    if (ferror(fp)) { return ERROR_WRITE_FAULT; }
 
 	fwrite((char *) RIFF_HEADER, sizeof(RIFF_HEADER), 1, fp);
 	write_int(fp, 4, 36 + wave->size * wavtype_get_bits(wave->type) / 8);
@@ -143,7 +199,7 @@ static waverror_t write_header_wave(const wavdata_t *wave, FILE *fp)
     assert(wave != NULL);
     assert(wave->type != TYPE_UNKNOWN);
     assert(fp != NULL);
-    if (ferror(fp)) { return ERROR_WRITE_FALUT; }
+    if (ferror(fp)) { return ERROR_WRITE_FAULT; }
 
     bits = wavtype_get_bits(wave->type);
     fmt = (wave->type == TYPE_FLOAT) ? (0x03) : (0x01);
@@ -169,7 +225,7 @@ static waverror_t write_chunk_fmt(int sr, int ch, int fmt, int bits, FILE *fp)
     assert(fmt != 0);
     assert(bits > 0 && (bits % 2) == 0);
     assert(fp != NULL);
-    if (ferror(fp)) { return ERROR_WRITE_FALUT; }
+    if (ferror(fp)) { return ERROR_WRITE_FAULT; }
 
     fwrite((char *) FMT__HEADER, sizeof(FMT__HEADER), 1, fp);
     write_int(fp, 4, 16);
@@ -246,6 +302,8 @@ static int write_float(FILE *fp, float value)
     return fwrite(&value, sizeof(value), 1, fp) == sizeof(value);
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// Read
 ///////////////////////////////////////////////////////////////////////////////
 
 static waverror_t read_header_riff(size_t *filesize, FILE *fp);
@@ -365,7 +423,7 @@ static waverror_t read_chunk_body(const char *sig, size_t size, wavdata_t *wave,
             return ERROR_OK;
         }
 
-        wave->data = malloc(wave->size * sizeof(double));
+        wave->data = buffer_new(wave->size);
         if (wave->data == NULL) {
             return ERROR_MEMORY_ALLOC;
         }
